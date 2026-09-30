@@ -1,0 +1,51 @@
+# GHAV experiment derived from reduxjs/redux-devtools#1046 CI.yml.
+name: GHAV redux-devtools 1046
+on:
+  push:
+    branches:
+      - 'codex/ghav-redux-*'
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup historical Node for every arm
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 16.20.2
+          package-manager-cache: false
+      - name: Prepare fixed Yarn Git compatibility environment
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ghav-bin"
+          cat > "$RUNNER_TEMP/ghav-bin/git" <<'GHAV_PY'
+          #!/usr/bin/env python3
+          import os
+          import sys
+          
+          args = sys.argv[1:]
+          if "clone" in args and "-c core.autocrlf=false" in args:
+              expanded = []
+              for arg in args:
+                  if arg == "-c core.autocrlf=false":
+                      expanded.extend(("-c", "core.autocrlf=false"))
+                  else:
+                      expanded.append(arg)
+              args = expanded
+              print("GHAV_GIT_ARG_ADAPTER: split Yarn clone config argument", file=sys.stderr)
+          os.execv("/usr/bin/git", ["/usr/bin/git", *args])
+          GHAV_PY
+          chmod +x "$RUNNER_TEMP/ghav-bin/git"
+          export PATH="$RUNNER_TEMP/ghav-bin:$PATH"
+          echo "$RUNNER_TEMP/ghav-bin" >> "$GITHUB_PATH"
+          git --version
+          git init -q "$RUNNER_TEMP/ghav-git-fixture"
+          git clone "-c core.autocrlf=false" "$RUNNER_TEMP/ghav-git-fixture" "$RUNNER_TEMP/ghav-git-clone"
+      - run: yarn install
+      - run: yarn format:check
+      - run: yarn build:all
+      - run: yarn lint:all
+      - name: Run yarn test:all
+        uses: GabrielBB/xvfb-action@b706e4e27b14669b486812790492dc50ca16b465
+        with:
+          run: yarn test:all
