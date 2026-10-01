@@ -1,0 +1,85 @@
+name: GHAV Redux 1046 Git-compatible complete CI ours
+
+on:
+  push:
+    branches:
+      - codex/ghav-redux1046-gitcompat-ours
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Complete CI build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout fixed historical source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: archidoge0/redux-devtools
+          ref: 0576588a1adda2a20184c138558dbca2af9b3c7a
+          persist-credentials: false
+      - name: Assert fixed source and inputs
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = '0576588a1adda2a20184c138558dbca2af9b3c7a'
+          test "$(git rev-parse HEAD^{tree})" = 'd0adfce93c9c762e6860a1ced897acbb8c6f9aef'
+          test -s yarn.lock
+          test -s .yarn/releases/yarn-3.1.1.cjs
+          echo "GHAV_SOURCE_SHA=$(git rev-parse HEAD)"
+          echo "GHAV_SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+          echo "GHAV_INPUT_LOCK=$(sha256sum yarn.lock | cut -d' ' -f1)"
+          echo "GHAV_PACKAGE=$(sha256sum package.json | cut -d' ' -f1)"
+          echo "GHAV_LERNA=$(sha256sum lerna.json | cut -d' ' -f1)"
+          echo "GHAV_YARNRC=$(sha256sum .yarnrc.yml | cut -d' ' -f1)"
+          echo "GHAV_YARN_RELEASE=$(sha256sum .yarn/releases/yarn-3.1.1.cjs | cut -d' ' -f1)"
+      - name: Setup fixed Node.js with historical cache choice
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20.20.2'
+          package-manager-cache: false
+      - name: Verify runtime
+        run: |
+          echo "GHAV_NODE_VERSION=$(node --version)"
+          echo "GHAV_YARN_VERSION=$(yarn --version)"
+      - name: Normalize historical Yarn Git argv
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ghav-git-bin"
+          cat > "$RUNNER_TEMP/ghav-git-bin/git" <<'GHAV_GIT_WRAPPER'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          normalized=()
+          for arg in "$@"; do
+            if [[ "$arg" == '-c core.autocrlf=false' ]]; then
+              normalized+=('-c' 'core.autocrlf=false')
+            else
+              normalized+=("$arg")
+            fi
+          done
+          exec /usr/bin/git "${normalized[@]}"
+          GHAV_GIT_WRAPPER
+          chmod +x "$RUNNER_TEMP/ghav-git-bin/git"
+          echo "$RUNNER_TEMP/ghav-git-bin" >> "$GITHUB_PATH"
+          echo "GHAV_GIT_VERSION=$(/usr/bin/git --version | awk '{print $3}')"
+          echo "GHAV_GIT_COMPAT_SHA=$(sha256sum "$RUNNER_TEMP/ghav-git-bin/git" | cut -d' ' -f1)"
+      - name: Install dependencies
+        run: yarn install
+      - name: Check all formatting
+        run: yarn format:check
+      - name: Build all packages
+        run: yarn build:all
+      - name: Lint all packages
+        run: yarn lint:all
+      - name: Run all tests under Xvfb
+        uses: GabrielBB/xvfb-action@b706e4e27b14669b486812790492dc50ca16b465 # v1.7
+        with:
+          run: yarn test:all
+      - name: Record complete-job output witnesses
+        if: always()
+        shell: bash
+        run: |
+          echo "GHAV_FINAL_LOCK=$(sha256sum yarn.lock | cut -d' ' -f1)"
+          count=$(find packages extension -type f \( -path '*/lib/*' -o -path '*/dist/*' -o -path '*/build/*' \) | wc -l | tr -d ' ')
+          echo "GHAV_BUILD_OUTPUT_FILES=$count"
