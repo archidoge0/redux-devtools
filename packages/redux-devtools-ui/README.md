@@ -1,3 +1,0 @@
-# Redux DevTools UI
-
-WIP
