@@ -18,6 +18,8 @@
     "storybook-static",
     ".vscode/*",
     "pnpm-lock.yaml",
-    "patches/**"
+    "patches/**",
+    ".github/workflows/ghav-*.yml",
+    ".oxfmtrc.json"
   ]
 }
