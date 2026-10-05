@@ -1,0 +1,89 @@
+name: "ghav human: CI"
+"on":
+  push:
+    branches:
+      - ghav/dev/2103
+    paths:
+      - .ghav/human
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  lint-format:
+    name: Lint and format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm run lint
+      - name: Check formatting
+        run: pnpm run format:check
+  build:
+    name: Build, type-check, and test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm run build:all
+      - name: Type-check
+        run: pnpm --recursive run type-check
+      - name: Test
+        run: pnpm run test
+      - name: Check published package types
+        run: |
+          for pkg in redux-devtools-instrument react-json-tree redux-devtools-app-core redux-devtools-ui redux-devtools-inspector-monitor; do
+            pnpm --filter "./packages/$pkg" --config.ignore-scripts=true pack --out "$RUNNER_TEMP/$pkg.tgz"
+            pnpm exec attw "$RUNNER_TEMP/$pkg.tgz" --profile esm-only --format table
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extension-dist
+          path: extension/dist
+          retention-days: 1
+  test-extension-browser:
+    name: Test extension in Chrome and Electron
+    needs:
+      - build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: extension-dist
+          path: extension/dist
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Run Selenium tests in Chrome
+        uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3
+        with:
+          run: pnpm --filter remotedev-redux-devtools-extension run test:chrome
+      - name: Run Electron tests
+        uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3
+        with:
+          run: pnpm --filter remotedev-redux-devtools-extension run test:electron
